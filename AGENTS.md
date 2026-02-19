@@ -195,20 +195,36 @@ Two options:
 
 ## Agent Architecture
 
-The system uses three agent types via the Claude Agent SDK:
+The system uses four agent types via the Claude Agent SDK:
 
 | Agent | Tools | Model | Role |
 |-------|-------|-------|------|
 | **Tech Lead** (orchestrator) | `Task` only | Configurable | Reads PRD + sources, splits into sections, delegates, synthesizes final review |
 | **Codebase Explorer** (N parallel) | `Read`, `Glob`, `Grep` | Configurable | Searches repos for code relevant to each PRD section |
+| **Web Researcher** (0-1, optional) | `WebSearch`, `WebFetch` | Explorer model | Searches the web for industry context, best practices, and technical docs |
 | **Senior Developer** (1 instance) | `Read`, `Glob`, `Grep` | Configurable | Feasibility analysis, gap identification, story point estimates |
 
 ### Pipeline Flow
 
 1. **Tech Lead** reads the PRD and supplementary sources, breaks into 3-5 sections
-2. **Codebase Explorers** (one per section) search repos in parallel
-3. **Senior Developer** receives PRD + explorer findings + supplementary sources for analysis
+2. **Codebase Explorers** (one per section) search repos in parallel; if web search is enabled,
+   the **Web Researcher** runs in parallel with them
+3. **Senior Developer** receives PRD + explorer findings + web research findings + supplementary
+   sources for analysis
 4. **Tech Lead** synthesizes everything into the structured review output
+
+### Web Search (Optional)
+
+Users can enable web search via a checkbox toggle in the upload form (default: off).
+When enabled:
+- A `web-researcher` agent is registered with `WebSearch` and `WebFetch` tools
+- It runs in parallel with codebase explorers during the "exploring" phase
+- It searches for industry best practices, technical documentation, prior art,
+  and known pitfalls relevant to the PRD
+- Its findings are passed to the Senior Developer alongside explorer findings
+- The ProgressPanel shows the web researcher with a purple indicator
+- Uses the SDK's built-in `WebSearch` (params: `query`, `allowed_domains?`,
+  `blocked_domains?`) and `WebFetch` (params: `url`, `prompt`) tools
 
 ### Supplementary Sources
 
@@ -242,8 +258,8 @@ Orchestration logic lives in `backend/src/agents/orchestrator.ts`.
 The backend emits Server-Sent Events (SSE) during review execution:
 
 - **Phase events**: understanding, exploring, analyzing, synthesizing
-- **Subagent events**: started/completed for each explorer and senior dev
-- **Activity events**: throttled tool usage (Read, Glob, Grep) per subagent
+- **Subagent events**: started/completed for each explorer, web researcher, and senior dev
+- **Activity events**: throttled tool usage (Read, Glob, Grep, WebSearch, WebFetch) per subagent
 - **Progress events**: percent complete with human-readable messages
 - **Usage events**: periodic token counts and cost estimates
 - **Complete event**: final status (completed/error)

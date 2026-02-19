@@ -24,6 +24,8 @@ export interface ReviewMeta {
   supplementaryFiles?: SupplementarySource[];
   /** Free-text context provided by the reviewer (links, notes, rationale). */
   additionalContext?: string;
+  /** Whether web search is enabled for this review. */
+  webSearchEnabled?: boolean;
 }
 
 export interface ReviewDetail extends ReviewMeta {

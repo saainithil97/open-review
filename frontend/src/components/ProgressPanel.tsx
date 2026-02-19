@@ -204,7 +204,11 @@ export default function ProgressPanel({ reviewId, onComplete }: ProgressPanelPro
   }, [fallbackPolling, sseConnected, reviewId, onComplete]);
 
   const activeExplorers = subagents.filter((s) => s.agentType === "codebase-explorer");
-  const completedExplorerCount = activeExplorers.filter((s) => s.status === "completed").length;
+  const webResearcher = subagents.find((s) => s.agentType === "web-researcher");
+  const exploringAgents = subagents.filter(
+    (s) => s.agentType === "codebase-explorer" || s.agentType === "web-researcher",
+  );
+  const completedExploringCount = exploringAgents.filter((s) => s.status === "completed").length;
 
   return (
     <div className="space-y-4 rounded-lg border border-blue-200 bg-blue-50/50 p-5">
@@ -253,16 +257,26 @@ export default function ProgressPanel({ reviewId, onComplete }: ProgressPanelPro
                 "text-gray-400"
               }`}>
                 {phase.label}
-                {phase.key === "exploring" && activeExplorers.length > 0 && (
+                {phase.key === "exploring" && exploringAgents.length > 0 && (
                   <span className="ml-1 font-normal">
-                    ({completedExplorerCount}/{activeExplorers.length} complete)
+                    ({completedExploringCount}/{exploringAgents.length} complete)
                   </span>
                 )}
               </p>
 
               {/* Subagent details for exploring phase */}
-              {phase.key === "exploring" && phase.status !== "pending" && activeExplorers.length > 0 && (
+              {phase.key === "exploring" && phase.status !== "pending" && exploringAgents.length > 0 && (
                 <div className="mt-1 space-y-0.5">
+                  {webResearcher && (
+                    <div className="flex items-center gap-1.5 text-xs text-purple-600">
+                      {webResearcher.status === "completed" ? (
+                        <span className="text-green-500">&#10003;</span>
+                      ) : (
+                        <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-purple-400" />
+                      )}
+                      <span className="truncate">Web research: {webResearcher.description}</span>
+                    </div>
+                  )}
                   {activeExplorers.map((sub, i) => (
                     <div key={i} className="flex items-center gap-1.5 text-xs text-gray-500">
                       {sub.status === "completed" ? (

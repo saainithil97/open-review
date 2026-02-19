@@ -25,6 +25,7 @@ export default function FileUpload({ onReviewCreated }: FileUploadProps) {
   const [repoPaths, setRepoPaths] = useState("");
   const [supplementaryFiles, setSupplementaryFiles] = useState<SupplementaryEntry[]>([]);
   const [additionalContext, setAdditionalContext] = useState("");
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [showSources, setShowSources] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,11 +94,12 @@ export default function FileUpload({ onReviewCreated }: FileUploadProps) {
         : undefined;
       const context = additionalContext.trim() || undefined;
 
-      await createReview(file, paths, suppForApi, context);
+      await createReview(file, paths, suppForApi, context, webSearchEnabled || undefined);
       setFile(null);
       setRepoPaths("");
       setSupplementaryFiles([]);
       setAdditionalContext("");
+      setWebSearchEnabled(false);
       setShowSources(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
       onReviewCreated();
@@ -311,6 +313,23 @@ export default function FileUpload({ onReviewCreated }: FileUploadProps) {
           </div>
         )}
       </div>
+
+      {/* Web search toggle */}
+      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 px-4 py-3">
+        <input
+          type="checkbox"
+          checked={webSearchEnabled}
+          onChange={(e) => setWebSearchEnabled(e.target.checked)}
+          className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+        />
+        <div>
+          <span className="text-sm font-medium text-gray-700">Enable web search</span>
+          <p className="mt-0.5 text-xs text-gray-500">
+            A web researcher agent will search for related best practices,
+            technical docs, and industry context to enrich the review.
+          </p>
+        </div>
+      </label>
 
       {/* Error */}
       {error && (

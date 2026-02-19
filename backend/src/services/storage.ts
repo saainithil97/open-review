@@ -39,6 +39,7 @@ export async function createReview(
   repoPaths: string[],
   supplementaryFiles?: SupplementarySource[],
   additionalContext?: string,
+  webSearchEnabled?: boolean,
 ): Promise<ReviewMeta> {
   await ensureDirs();
   const id = uuidv4();
@@ -56,6 +57,9 @@ export async function createReview(
   }
   if (additionalContext?.trim()) {
     meta.additionalContext = additionalContext.trim();
+  }
+  if (webSearchEnabled) {
+    meta.webSearchEnabled = true;
   }
 
   const reviewDir = path.join(OUTPUTS_DIR, id);

@@ -55,6 +55,7 @@ export interface ReviewMeta {
   usage?: SessionUsage;
   supplementaryFiles?: SupplementarySource[];
   additionalContext?: string;
+  webSearchEnabled?: boolean;
 }
 
 export interface ReviewDetail extends ReviewMeta {
@@ -146,6 +147,7 @@ export async function createReview(
   repoPaths: string[],
   supplementaryFiles?: Array<{ file: File; label?: string }>,
   additionalContext?: string,
+  webSearchEnabled?: boolean,
 ): Promise<ReviewMeta> {
   const formData = new FormData();
   formData.append("file", file);
@@ -162,6 +164,10 @@ export async function createReview(
 
   if (additionalContext?.trim()) {
     formData.append("additionalContext", additionalContext);
+  }
+
+  if (webSearchEnabled) {
+    formData.append("webSearchEnabled", "true");
   }
 
   return request<ReviewMeta>("/reviews", {

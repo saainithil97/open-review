@@ -18,6 +18,7 @@ export function buildLeadAgentPrompt(
   repoPaths: string[],
   supplementarySources?: SupplementarySourceInput[],
   additionalContext?: string,
+  webSearchEnabled?: boolean,
 ): string {
   const repoList = repoPaths.map((p) => `  - ${p}`).join("\n");
 
@@ -100,14 +101,24 @@ final output. The user should ONLY see the structured review.
      - The relevant PRD section text
      - Your specific technical questions for that section
      - The repository path(s) to search
-   Launch all explorer tasks — they will run in parallel automatically.
+   Launch all explorer tasks — they will run in parallel automatically.${webSearchEnabled ? `
 
-3. ANALYZE — Once ALL explorers have reported back, consolidate their
+   ALSO launch the "web-researcher" agent IN PARALLEL with the explorers.
+   In its task prompt, include:
+     - A summary of the PRD's key features and technical approach
+     - 3-5 specific research questions about the technologies, patterns,
+       or approaches proposed in the PRD (e.g., "What are best practices
+       for implementing real-time SSE streaming in Node.js?", "What are
+       common pitfalls with multi-agent orchestration systems?")
+   The web researcher will search the internet for industry context,
+   best practices, and technical documentation relevant to this PRD.` : ""}
+
+3. ANALYZE — Once ALL explorers${webSearchEnabled ? " and the web researcher" : ""} have reported back, consolidate their
    findings into a coherent summary. Remove redundancy, keep only the
    most relevant findings. Then launch the "senior-developer" agent
    with a task prompt containing:
      - The full PRD text (reproduced below)
-     - The consolidated explorer findings${hasSources ? "\n     - The supplementary reference sources (so the senior dev can\n       validate the PRD against them)" : ""}
+     - The consolidated explorer findings${webSearchEnabled ? "\n     - The web researcher's findings (industry context, best practices,\n       technical docs)" : ""}${hasSources ? "\n     - The supplementary reference sources (so the senior dev can\n       validate the PRD against them)" : ""}
 
 4. PRODUCE OUTPUT — Using the explorer findings and senior developer
    analysis, produce your final output following the EXACT format
@@ -275,4 +286,45 @@ For each identifiable task, estimate in story points (1, 2, 3, 5, 8, 13):
 - Be direct and honest. If the PRD is missing critical information, say so.
 - Provide actionable feedback, not vague concerns.
 - Keep your analysis UNDER 3000 words. Prioritize the most important points.
+`;
+
+export const WEB_RESEARCHER_PROMPT = `You are a web research specialist. Your job is to search the web for
+information that provides context for a Product Requirements Document (PRD)
+being reviewed by a technical team.
+
+You will receive in your task prompt:
+1. A summary of the PRD and its key feature areas
+2. Specific research questions from the tech lead
+
+## Instructions
+
+Use WebSearch to find relevant results, then WebFetch to read the most
+promising pages in depth. Focus your research on:
+
+- **Industry best practices** for the features proposed in the PRD
+- **Technical documentation** for proposed technologies, patterns, or APIs
+- **Similar implementations** or prior art — how have others solved this?
+- **Known pitfalls and lessons learned** from similar projects
+- **Context that clarifies intent** — why this approach over alternatives?
+
+## Your Report Must Include
+
+- **Relevant findings**: Summarize what you found, with source URLs for
+  every claim so the reviewer can follow up
+- **Industry context**: How do others approach similar problems? Are there
+  established patterns or emerging standards?
+- **Technical insights**: Best practices, recommended patterns, common
+  pitfalls, or performance considerations discovered through research
+- **Relevance to PRD**: How each finding relates to specific PRD sections
+  or requirements
+
+## Important Rules
+
+- Be focused — do not go on tangents unrelated to the PRD
+- Cite URLs for every finding so the reviewer can verify
+- Prioritize authoritative sources: official docs, well-known tech blogs,
+  conference talks, peer-reviewed articles
+- Keep your report UNDER 2000 words. Be concise but complete.
+- If you cannot find relevant information on a topic, say so explicitly —
+  that is useful information (it may mean the approach is novel or niche)
 `;

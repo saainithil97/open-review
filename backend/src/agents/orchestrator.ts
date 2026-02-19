@@ -1,6 +1,6 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { AgentDefinition } from "@anthropic-ai/claude-agent-sdk";
-import { buildLeadAgentPrompt, CODEBASE_EXPLORER_PROMPT, SENIOR_DEVELOPER_PROMPT } from "./prompts.js";
+import { buildLeadAgentPrompt, CODEBASE_EXPLORER_PROMPT, SENIOR_DEVELOPER_PROMPT, WEB_RESEARCHER_PROMPT } from "./prompts.js";
 import type { OrchestratorInput, OrchestratorResult } from "./types.js";
 import type {
   ProgressEvent,
@@ -38,14 +38,14 @@ function addUsage(
 
 /**
  * Run the full PRD review pipeline:
- *   Lead Agent -> Codebase Explorers (parallel) -> Senior Developer -> Synthesis
+ *   Lead Agent -> Codebase Explorers + Web Researcher (parallel) -> Senior Developer -> Synthesis
  *
  * The lead agent orchestrates everything via the Task tool.
  * We set up the agents and the lead's prompt, then let it work,
  * emitting progress events along the way.
  */
 export async function runReview(input: OrchestratorInput): Promise<OrchestratorResult> {
-  const { prdContent, supplementarySources, additionalContext, repoPaths, config, onProgress } = input;
+  const { prdContent, supplementarySources, additionalContext, repoPaths, config, onProgress, webSearchEnabled } = input;
 
   logger.info("Starting PRD review pipeline", {
     repoPaths,
@@ -53,6 +53,7 @@ export async function runReview(input: OrchestratorInput): Promise<OrchestratorR
     prdLength: prdContent.length,
     supplementarySources: supplementarySources?.length ?? 0,
     hasAdditionalContext: !!additionalContext,
+    webSearchEnabled: !!webSearchEnabled,
   });
 
   // ─── Emit helper ────────────────────────────────────────────────────
@@ -88,12 +89,28 @@ export async function runReview(input: OrchestratorInput): Promise<OrchestratorR
     },
   };
 
-  const leadPrompt = buildLeadAgentPrompt(prdContent, repoPaths, supplementarySources, additionalContext);
+  // Conditionally register web-researcher agent
+  if (webSearchEnabled) {
+    agents["web-researcher"] = {
+      description:
+        "Web research specialist. Use this agent to search the internet for industry context, " +
+        "best practices, technical documentation, and prior art relevant to the PRD. Launch this " +
+        "agent IN PARALLEL with the codebase explorers. Provide: a summary of the PRD's key " +
+        "features and 3-5 specific research questions about the technologies and approaches proposed.",
+      prompt: WEB_RESEARCHER_PROMPT,
+      tools: ["WebSearch", "WebFetch"],
+      model: config.explorerModel,
+    };
+  }
+
+  const leadPrompt = buildLeadAgentPrompt(prdContent, repoPaths, supplementarySources, additionalContext, webSearchEnabled);
 
   // ─── Phase tracking state ───────────────────────────────────────────
   let currentPhase: ReviewPhase = "understanding";
   let totalExplorers = 0;
   let completedExplorers = 0;
+  let webResearcherStarted = false;
+  let webResearcherCompleted = false;
   let seniorDevStarted = false;
   let seniorDevCompleted = false;
 
@@ -128,14 +145,19 @@ export async function runReview(input: OrchestratorInput): Promise<OrchestratorR
         percent = 5;
         message = "Reading and understanding the PRD...";
         break;
-      case "exploring":
-        percent = totalExplorers > 0
-          ? Math.round(10 + 50 * (completedExplorers / totalExplorers))
+      case "exploring": {
+        // Count total parallel tasks (explorers + optional web researcher)
+        const totalParallelTasks = totalExplorers + (webResearcherStarted ? 1 : 0);
+        const completedParallelTasks = completedExplorers + (webResearcherCompleted ? 1 : 0);
+        percent = totalParallelTasks > 0
+          ? Math.round(10 + 50 * (completedParallelTasks / totalParallelTasks))
           : 15;
+        const webSuffix = webResearcherStarted ? " + web research" : "";
         message = totalExplorers > 0
-          ? `Exploring codebase (${completedExplorers}/${totalExplorers} complete)`
-          : "Exploring codebase...";
+          ? `Exploring codebase${webSuffix} (${completedParallelTasks}/${totalParallelTasks} complete)`
+          : `Exploring codebase${webSuffix}...`;
         break;
+      }
       case "analyzing":
         percent = seniorDevCompleted ? 85 : 70;
         message = seniorDevCompleted
@@ -263,12 +285,13 @@ export async function runReview(input: OrchestratorInput): Promise<OrchestratorR
               taskMap.set(toolUseId, { agentType, description });
 
               // Create subagent usage tracker
+              const subagentModel = agentType === "senior-developer"
+                ? (config.seniorDevModel || "sonnet")
+                : (config.explorerModel || "sonnet"); // explorers + web-researcher use explorer model
               subagentTokens.set(toolUseId, {
                 agentType,
                 description,
-                model: agentType === "codebase-explorer"
-                  ? (config.explorerModel || "sonnet")
-                  : (config.seniorDevModel || "sonnet"),
+                model: subagentModel,
                 usage: emptyTokenUsage(),
               });
 
@@ -279,6 +302,12 @@ export async function runReview(input: OrchestratorInput): Promise<OrchestratorR
                   emitPhase("exploring", `Exploring codebase (0/${totalExplorers} sections)...`);
                 }
                 logger.info(`Launched codebase-explorer: ${description}`);
+              } else if (agentType === "web-researcher") {
+                webResearcherStarted = true;
+                if (currentPhase === "understanding") {
+                  emitPhase("exploring", "Exploring codebase and searching the web...");
+                }
+                logger.info(`Launched web-researcher: ${description}`);
               } else if (agentType === "senior-developer") {
                 seniorDevStarted = true;
                 emitPhase("analyzing", "Senior developer analyzing findings...");
@@ -312,6 +341,10 @@ export async function runReview(input: OrchestratorInput): Promise<OrchestratorR
                   detail = `pattern: "${toolInput.pattern}"`;
                 } else if (toolName === "Glob" && toolInput.pattern) {
                   detail = `pattern: ${toolInput.pattern}`;
+                } else if (toolName === "WebSearch" && toolInput.query) {
+                  detail = `"${String(toolInput.query)}"`;
+                } else if (toolName === "WebFetch" && toolInput.url) {
+                  detail = String(toolInput.url);
                 }
 
                 if (detail) {
@@ -353,6 +386,9 @@ export async function runReview(input: OrchestratorInput): Promise<OrchestratorR
                   logger.info(
                     `Explorer completed (${completedExplorers}/${totalExplorers}): ${subInfo.description}`,
                   );
+                } else if (subInfo.agentType === "web-researcher") {
+                  webResearcherCompleted = true;
+                  logger.info("Web researcher completed");
                 } else if (subInfo.agentType === "senior-developer") {
                   seniorDevCompleted = true;
                   logger.info("Senior developer analysis completed");

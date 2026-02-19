@@ -113,6 +113,7 @@ router.post("/", uploadFields, async (req, res) => {
     }));
 
     const additionalContext: string | undefined = req.body.additionalContext?.trim() || undefined;
+    const webSearchEnabled: boolean = req.body.webSearchEnabled === "true";
 
     const safeName = getSafeFileName(prdFile.originalname);
     const review = await createReview(
@@ -121,6 +122,7 @@ router.post("/", uploadFields, async (req, res) => {
       repoPaths,
       supplementaryMeta.length > 0 ? supplementaryMeta : undefined,
       additionalContext,
+      webSearchEnabled || undefined,
     );
 
     // Save primary PRD file to disk
@@ -134,7 +136,7 @@ router.post("/", uploadFields, async (req, res) => {
     }
 
     // Start the review process in the background
-    startReviewProcess(review.id, filePath, repoPaths, supplementaryMeta, additionalContext);
+    startReviewProcess(review.id, filePath, repoPaths, supplementaryMeta, additionalContext, webSearchEnabled);
 
     res.status(201).json(review);
   } catch (error) {
@@ -321,6 +323,7 @@ router.post("/:id/rerun", async (req, res) => {
       meta.repoPaths,
       meta.supplementaryFiles,
       meta.additionalContext,
+      meta.webSearchEnabled,
     );
 
     const updated = await getReviewMeta(meta.id);
@@ -339,6 +342,7 @@ function startReviewProcess(
   repoPaths: string[],
   supplementaryMeta?: SupplementarySource[],
   additionalContext?: string,
+  webSearchEnabled?: boolean,
 ): void {
   // Create event emitter for this review
   const emitter = new EventEmitter();
@@ -384,6 +388,7 @@ function startReviewProcess(
         prdContent,
         supplementarySources: supplementarySources.length > 0 ? supplementarySources : undefined,
         additionalContext,
+        webSearchEnabled,
         repoPaths,
         config: getAgentConfig(),
         onProgress,

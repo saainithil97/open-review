@@ -13,6 +13,8 @@ export interface OrchestratorInput {
   supplementarySources?: SupplementaryDocument[];
   /** Free-text context from the reviewer (links, notes, rationale). */
   additionalContext?: string;
+  /** Whether to launch a web researcher agent alongside codebase explorers. */
+  webSearchEnabled?: boolean;
   repoPaths: string[];
   config: {
     leadModel: AgentModelChoice;
