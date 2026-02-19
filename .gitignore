@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+backend/data/uploads/*
+backend/data/outputs/*
+!backend/data/uploads/.gitkeep
+!backend/data/outputs/.gitkeep
+*.tsbuildinfo
